@@ -27,4 +27,15 @@ terraform show
 ``` terraform
 terraform state list
 ```
-
+``` terraform
+terraform plan -destroy -target=aws_instance.my_ec2
+```
+``` terraform
+terraform destroy -target=aws_instance.my_ec2
+```
+``` terraform
+terraform refresh
+```
+``` terraform
+terraform graph
+```

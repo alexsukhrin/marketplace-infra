@@ -22,21 +22,8 @@ locals {
 }
 
 resource "aws_key_pair" "ec2_key" {
-  key_name   = "terraform-key"
-  public_key = file("~/.ssh/id_rsa.pub")
-}
-
-resource "aws_instance" "marketplace_server" {
-  ami           = "ami-017095afb82994ac7"
-  instance_type = "t2.micro"
-  associate_public_ip_address = true
-
-  tags = {
-    Name = "MarketplaceServer"
-  }
-
-  key_name = aws_key_pair.ec2_key.key_name
-
+  key_name   = "ec2_key"
+  public_key = file("~/.ssh/ec2_key.pub")
 }
 
 resource "aws_security_group" "ec2_sg" {
@@ -72,18 +59,31 @@ resource "aws_security_group" "ec2_sg" {
   }
 }
 
+resource "aws_instance" "marketplace_server" {
+  ami                         = "ami-017095afb82994ac7"
+  instance_type               = "t2.micro"
+  associate_public_ip_address = true
+  key_name                    = aws_key_pair.ec2_key.key_name
+  security_groups             = [aws_security_group.ec2_sg.name]
+  vpc_security_group_ids      = [aws_security_group.ec2_sg.id]
+
+  tags = {
+    Name = "MarketplaceServer"
+  }
+}
+
 resource "aws_db_instance" "postgres_db" {
-  allocated_storage     = 20
-  max_allocated_storage = 100
-  identifier            = "postgres-instance"
-  engine                = "postgres"
-  engine_version        = "16.1"
-  instance_class        = "db.t4g.micro"
-  db_name               = local.postgres_name
-  username              = local.postgres_user_name
-  password              = local.postgres_user_password
-  publicly_accessible   = true
-  skip_final_snapshot   = true
+  allocated_storage      = 20
+  max_allocated_storage  = 100
+  identifier             = "postgres-instance"
+  engine                 = "postgres"
+  engine_version         = "16.1"
+  instance_class         = "db.t4g.micro"
+  db_name                = local.postgres_name
+  username               = local.postgres_user_name
+  password               = local.postgres_user_password
+  publicly_accessible    = true
+  skip_final_snapshot    = true
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
 
   tags = {
