@@ -40,3 +40,4 @@ aws.sh
 .calva/
 .clj-kondo/
 .lsp/
+.idea
