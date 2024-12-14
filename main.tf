@@ -59,6 +59,23 @@ resource "aws_security_group" "ec2_sg" {
   }
 }
 
+resource "aws_iam_role" "s3_access_role" {
+  name = "s3_access_role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
 resource "aws_instance" "marketplace_server" {
   ami                         = "ami-017095afb82994ac7"
   instance_type               = "t2.micro"
@@ -70,6 +87,21 @@ resource "aws_instance" "marketplace_server" {
   tags = {
     Name = "MarketplaceServer"
   }
+
+  user_data = <<-EOF
+              #!/bin/bash
+              sudo yum update -y
+              sudo yum install -y git
+              sudo yum install -y aws-cli
+              sudo yum install -y amazon-linux-extras
+              sudo amazon-linux-extras enable docker
+              sudo yum install -y docker
+              sudo service docker start
+              sudo usermod -aG docker ec2-user
+              EOF
+
+  iam_instance_profile = aws_iam_instance_profile.s3_access_profile.name
+
 }
 
 resource "aws_db_instance" "postgres_db" {
@@ -77,7 +109,7 @@ resource "aws_db_instance" "postgres_db" {
   max_allocated_storage  = 100
   identifier             = "postgres-instance"
   engine                 = "postgres"
-  engine_version         = "16.1"
+  engine_version         = "16.3"
   instance_class         = "db.t4g.micro"
   db_name                = local.postgres_name
   username               = local.postgres_user_name
@@ -95,32 +127,51 @@ output "postgres_db_endpoint" {
   value = aws_db_instance.postgres_db.endpoint
 }
 
-# resource "aws_s3_bucket" "images_bucket" {
-#   bucket = "marketplace-bucket"
-#   acl    = "private"
-#
-#   tags = {
-#     Name = "MarketplaceBucket"
-#   }
-# }
+resource "random_string" "suffix" {
+  length  = 6
+  special = false
+  upper   = false
+}
 
-# resource "aws_s3_bucket_policy" "images_policy" {
-#   bucket = aws_s3_bucket.images_bucket.id
-#
-#   policy = jsonencode({
-#     Version = "2012-10-17"
-#     Statement = [
-#       {
-#         Sid       = "PublicAccessPermissions"
-#         Effect    = "Allow"
-#         Principal = "*"
-#         Action    = [
-#           "s3:GetObject",
-#           "s3:PutObject",
-#           "s3:DeleteObject"
-#         ]
-#         Resource  = "${aws_s3_bucket.images_bucket.arn}/*"
-#       }
-#     ]
-#   })
-# }
+resource "aws_s3_bucket" "marketplace_bucket" {
+  bucket = "marketplace-bucket-${random_string.suffix.result}"
+
+  tags = {
+    Name = "MarketplaceBucket"
+  }
+}
+
+resource "aws_iam_policy" "s3_access_policy" {
+  name        = "s3_access_policy"
+  description = "Policy for EC2 to access S3 bucket"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "PublicAccessPermissions"
+        Effect    = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ]
+        Resource = "arn:aws:s3:::${aws_s3_bucket.marketplace_bucket.bucket}/*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "attach_policy" {
+  policy_arn = aws_iam_policy.s3_access_policy.arn
+  role       = aws_iam_role.s3_access_role.name
+}
+
+resource "aws_iam_instance_profile" "s3_access_profile" {
+  name = "s3_access_profile"
+  role = aws_iam_role.s3_access_role.name
+}
+
+output "bucket_name" {
+  value = aws_s3_bucket.marketplace_bucket.id
+}
