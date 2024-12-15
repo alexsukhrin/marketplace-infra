@@ -141,6 +141,15 @@ resource "aws_s3_bucket" "marketplace_bucket" {
   }
 }
 
+resource "aws_s3_bucket_public_access_block" "marketplace_bucket_block" {
+  bucket = aws_s3_bucket.marketplace_bucket.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
 resource "aws_iam_policy" "s3_access_policy" {
   name        = "s3_access_policy"
   description = "Policy for EC2 to access S3 bucket"
@@ -149,14 +158,31 @@ resource "aws_iam_policy" "s3_access_policy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid       = "PublicAccessPermissions"
-        Effect    = "Allow"
+        Sid    = "PublicAccessPermissions"
+        Effect = "Allow"
         Action = [
           "s3:GetObject",
           "s3:PutObject",
           "s3:DeleteObject"
         ]
         Resource = "arn:aws:s3:::${aws_s3_bucket.marketplace_bucket.bucket}/*"
+      }
+    ]
+  })
+}
+
+resource "aws_s3_bucket_policy" "marketplace_bucket_policy" {
+  bucket = aws_s3_bucket.marketplace_bucket.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "PublicReadGetObject"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "s3:GetObject"
+        Resource  = "arn:aws:s3:::${aws_s3_bucket.marketplace_bucket.id}/*"
       }
     ]
   })
