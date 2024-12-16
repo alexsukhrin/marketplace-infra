@@ -12,3 +12,8 @@ variable "POSTGRES_PASSWORD" {
   description = "Password for the PostgreSQL user"
   type        = string
 }
+
+variable "AWS_REGION" {
+  description = "aws region"
+  type        = string
+}
