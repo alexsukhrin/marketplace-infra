@@ -154,6 +154,6 @@ output "postgres_db_endpoint" {
   value = aws_db_instance.postgres_db.endpoint
 }
 
-output "frontend_bucket_url" {
+output "marketplace_bucket_url" {
   value = "https://${aws_s3_bucket.marketplace_bucket.bucket}.s3.${var.AWS_REGION}.amazonaws.com"
 }
