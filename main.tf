@@ -10,7 +10,7 @@ terraform {
 }
 
 provider "aws" {
-  region = "eu-central-1"
+  region = var.AWS_REGION
 }
 
 locals {
@@ -59,23 +59,6 @@ resource "aws_security_group" "ec2_sg" {
   }
 }
 
-resource "aws_iam_role" "s3_access_role" {
-  name = "s3_access_role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
 resource "aws_instance" "marketplace_server" {
   ami                         = "ami-017095afb82994ac7"
   instance_type               = "t2.micro"
@@ -100,8 +83,6 @@ resource "aws_instance" "marketplace_server" {
               sudo usermod -aG docker ec2-user
               EOF
 
-  iam_instance_profile = aws_iam_instance_profile.s3_access_profile.name
-
 }
 
 resource "aws_db_instance" "postgres_db" {
@@ -123,81 +104,56 @@ resource "aws_db_instance" "postgres_db" {
   }
 }
 
-output "postgres_db_endpoint" {
-  value = aws_db_instance.postgres_db.endpoint
-}
-
-resource "random_string" "suffix" {
-  length  = 6
+resource "random_string" "bucket_id" {
+  length  = 8
   special = false
   upper   = false
 }
 
 resource "aws_s3_bucket" "marketplace_bucket" {
-  bucket = "marketplace-bucket-${random_string.suffix.result}"
+  bucket = "marketplace-bucket-${random_string.bucket_id.result}"
 
   tags = {
-    Name = "MarketplaceBucket"
+    Name        = "MarketplaceBucket"
+    Environment = "Prod"
   }
 }
 
-resource "aws_s3_bucket_public_access_block" "marketplace_bucket_block" {
-  bucket = aws_s3_bucket.marketplace_bucket.id
-
+resource "aws_s3_bucket_public_access_block" "frontend_bucket_public_access" {
+  bucket                  = aws_s3_bucket.marketplace_bucket.id
   block_public_acls       = false
   block_public_policy     = false
   ignore_public_acls      = false
   restrict_public_buckets = false
 }
 
-resource "aws_iam_policy" "s3_access_policy" {
-  name        = "s3_access_policy"
-  description = "Policy for EC2 to access S3 bucket"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "PublicAccessPermissions"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject"
-        ]
-        Resource = "arn:aws:s3:::${aws_s3_bucket.marketplace_bucket.bucket}/*"
-      }
-    ]
-  })
-}
-
-resource "aws_s3_bucket_policy" "marketplace_bucket_policy" {
+resource "aws_s3_bucket_policy" "frontend_bucket_policy" {
   bucket = aws_s3_bucket.marketplace_bucket.id
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
       {
-        Sid       = "PublicReadGetObject"
-        Effect    = "Allow"
-        Principal = "*"
-        Action    = "s3:GetObject"
-        Resource  = "arn:aws:s3:::${aws_s3_bucket.marketplace_bucket.id}/*"
+        Effect    = "Allow",
+        Principal = "*",
+        Action    = "s3:GetObject",
+        Resource  = "${aws_s3_bucket.marketplace_bucket.arn}/*"
       }
     ]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "attach_policy" {
-  policy_arn = aws_iam_policy.s3_access_policy.arn
-  role       = aws_iam_role.s3_access_role.name
+resource "aws_s3_object" "test_image" {
+  bucket       = aws_s3_bucket.marketplace_bucket.id
+  key          = "example.png"
+  source       = "${path.module}/example.png"
+  content_type = "image/png"
 }
 
-resource "aws_iam_instance_profile" "s3_access_profile" {
-  name = "s3_access_profile"
-  role = aws_iam_role.s3_access_role.name
+output "postgres_db_endpoint" {
+  value = aws_db_instance.postgres_db.endpoint
 }
 
-output "bucket_name" {
-  value = aws_s3_bucket.marketplace_bucket.id
+output "frontend_bucket_url" {
+  value = "https://${aws_s3_bucket.marketplace_bucket.bucket}.s3.${var.AWS_REGION}.amazonaws.com"
 }
