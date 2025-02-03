@@ -184,19 +184,15 @@ resource "aws_iam_role" "ec2_s3_role" {
 }
 
 resource "aws_iam_policy" "ec2_s3_access_policy" {
-  name = "ec2-s3-access-policy"
+  name        = "ec2-s3-access-policy"
+  description = "Allows EC2 instances to access S3 bucket"
 
   policy = jsonencode({
-    Version = "2012-10-17",
+    Version = "2012-10-17"
     Statement = [
       {
-        Effect    = "Allow",
-        Principal = "*",
-        Action = [
-          "s3:PutObject",
-          "s3:GetObject",
-          "s3:ListBucket"
-        ],
+        Effect = "Allow"
+        Action = ["s3:ListBucket", "s3:GetObject", "s3:PutObject"]
         Resource = [
           "${aws_s3_bucket.marketplace_bucket.arn}",
           "${aws_s3_bucket.marketplace_bucket.arn}/*"
