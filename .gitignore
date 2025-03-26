@@ -41,3 +41,5 @@ aws.sh
 .clj-kondo/
 .lsp/
 .idea
+
+.terraform.lock.hcl
