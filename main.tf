@@ -106,7 +106,7 @@ resource "aws_db_instance" "postgres_db" {
   max_allocated_storage  = 100
   identifier             = "postgres-instance"
   engine                 = "postgres"
-  engine_version         = "16.3"
+  engine_version         = "16.4"
   instance_class         = "db.t4g.micro"
   db_name                = local.postgres_name
   username               = local.postgres_user_name
@@ -132,6 +132,15 @@ resource "aws_s3_bucket" "marketplace_bucket" {
   tags = {
     Name        = "MarketplaceBucket"
     Environment = "Prod"
+  }
+}
+
+resource "aws_s3_bucket_cors_configuration" "marketplace_bucket_cors" {
+  bucket = aws_s3_bucket.marketplace_bucket.id
+
+  cors_rule {
+    allowed_methods = ["GET"]
+    allowed_origins = ["*"]
   }
 }
 
