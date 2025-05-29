@@ -27,7 +27,7 @@ resource "aws_key_pair" "ec2_key" {
 }
 
 resource "aws_security_group" "ec2_sg" {
-  name        = "ec2_security_group"
+  name        = "ec2_security_group_v2"
   description = "Allow SSH and HTTP traffic"
 
   ingress {
@@ -54,6 +54,13 @@ resource "aws_security_group" "ec2_sg" {
   ingress {
     from_port   = 8032
     to_port     = 8032
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 8033
+    to_port     = 8033
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
