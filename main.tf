@@ -13,14 +13,6 @@ provider "aws" {
   region = var.AWS_REGION
 }
 
-locals {
-
-  postgres_name          = var.POSTGRES_DB_NAME
-  postgres_user_name     = var.POSTGRES_USERNAME
-  postgres_user_password = var.POSTGRES_PASSWORD
-
-}
-
 resource "aws_key_pair" "ec2_key" {
   key_name   = "ec2_key"
   public_key = file("~/.ssh/ec2_key.pub")
@@ -66,8 +58,57 @@ resource "aws_security_group" "ec2_sg" {
   }
 
   ingress {
+    from_port   = 4334
+    to_port     = 4334
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 4335
+    to_port     = 4335
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 4336
+    to_port     = 4336
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 8998
+    to_port     = 8998
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
     from_port   = 5432
     to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 8084
+    to_port     = 8084
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 9004
+    to_port     = 9004
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 7888
+    to_port     = 7888
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -89,41 +130,20 @@ resource "aws_instance" "marketplace_server" {
   vpc_security_group_ids      = [aws_security_group.ec2_sg.id]
 
   iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name
-
-  tags = {
-    Name = "MarketplaceServer"
-  }
+  user_data_replace_on_change = true
 
   user_data = <<-EOF
               #!/bin/bash
-              sudo yum update -y
-              sudo yum install -y git
-              sudo yum install -y aws-cli
-              sudo yum install -y amazon-linux-extras
-              sudo amazon-linux-extras enable docker
+              set -ex
+              # Install and start Docker
               sudo yum install -y docker
-              sudo service docker start
+              sudo systemctl start docker
+              sudo systemctl enable docker
               sudo usermod -aG docker ec2-user
               EOF
 
-}
-
-resource "aws_db_instance" "postgres_db" {
-  allocated_storage      = 20
-  max_allocated_storage  = 100
-  identifier             = "postgres-instance"
-  engine                 = "postgres"
-  engine_version         = "16.4"
-  instance_class         = "db.t4g.micro"
-  db_name                = local.postgres_name
-  username               = local.postgres_user_name
-  password               = local.postgres_user_password
-  publicly_accessible    = true
-  skip_final_snapshot    = true
-  vpc_security_group_ids = [aws_security_group.ec2_sg.id]
-
   tags = {
-    Name = "PostgresDB"
+    Name = "MarketplaceServer"
   }
 }
 
@@ -199,20 +219,34 @@ resource "aws_iam_role" "ec2_s3_role" {
   })
 }
 
-resource "aws_iam_policy" "ec2_s3_access_policy" {
-  name        = "ec2-s3-access-policy"
-  description = "Allows EC2 instances to access S3 bucket"
+resource "aws_iam_policy" "ec2_s3_dynamodb_access_policy" {
+  name        = "ec2-s3-dynamodb-access-policy"
+  description = "Allows EC2 instances to access S3 bucket and DynamoDB table"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
       {
-        Effect = "Allow"
-        Action = ["s3:ListBucket", "s3:GetObject", "s3:PutObject"]
+        Effect = "Allow",
+        Action = ["s3:ListBucket", "s3:GetObject", "s3:PutObject"],
         Resource = [
-          "${aws_s3_bucket.marketplace_bucket.arn}",
+          aws_s3_bucket.marketplace_bucket.arn,
           "${aws_s3_bucket.marketplace_bucket.arn}/*"
         ]
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "dynamodb:CreateTable",
+          "dynamodb:DescribeTable",
+          "dynamodb:DeleteItem",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+          "dynamodb:UpdateItem"
+        ],
+        Resource = aws_dynamodb_table.datomic_tx.arn
       }
     ]
   })
@@ -220,7 +254,7 @@ resource "aws_iam_policy" "ec2_s3_access_policy" {
 
 resource "aws_iam_role_policy_attachment" "ec2_s3_policy_attachment" {
   role       = aws_iam_role.ec2_s3_role.name
-  policy_arn = aws_iam_policy.ec2_s3_access_policy.arn
+  policy_arn = aws_iam_policy.ec2_s3_dynamodb_access_policy.arn
 }
 
 resource "aws_iam_instance_profile" "ec2_instance_profile" {
@@ -228,10 +262,46 @@ resource "aws_iam_instance_profile" "ec2_instance_profile" {
   role = aws_iam_role.ec2_s3_role.name
 }
 
-output "postgres_db_endpoint" {
-  value = aws_db_instance.postgres_db.endpoint
+resource "aws_dynamodb_table" "datomic_tx" {
+  name           = "datomic-tx"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "id"
+  attribute {
+    name = "id"
+    type = "S"
+  }
+}
+
+resource "aws_db_instance" "postgres_db" {
+  allocated_storage      = 20
+  max_allocated_storage  = 100
+  identifier             = "postgres-instance"
+  engine                 = "postgres"
+  engine_version         = "16.4"
+  instance_class         = "db.t4g.micro"
+  db_name                = var.POSTGRES_DB_NAME
+  username               = var.POSTGRES_USERNAME
+  password               = var.POSTGRES_PASSWORD
+  publicly_accessible    = true
+  skip_final_snapshot    = true
+  vpc_security_group_ids = [aws_security_group.ec2_sg.id]
+
+  tags = {
+    Name = "PostgresDB"
+  }
 }
 
 output "marketplace_bucket_url" {
-  value = "https://${aws_s3_bucket.marketplace_bucket.bucket}.s3.${var.AWS_REGION}.amazonaws.com"
+  value       = "http://${aws_s3_bucket.marketplace_bucket.bucket}.s3.amazonaws.com/"
+  description = "The URL of the S3 bucket"
+}
+
+output "marketplace_server_public_ip" {
+  value       = aws_instance.marketplace_server.public_ip
+  description = "Public IP address of the Marketplace EC2 server"
+}
+
+output "postgres_db_endpoint" {
+  value       = aws_db_instance.postgres_db.endpoint
+  description = "The endpoint of the Postgres DB instance"
 }
